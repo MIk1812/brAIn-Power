@@ -58,6 +58,7 @@ class CustomDataset(Dataset):
         self.labels = labels
         self.data = data
         print('line59',self.data.min(),self.data.max())
+
     def __len__(self):
         return len(self.labels)
 
