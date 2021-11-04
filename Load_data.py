@@ -16,6 +16,7 @@ def load_data_2np(folder='car_segmentation_2021',percentage=0.01,hot_encoding=Fa
     """
     :param folder: str: relative path to your car_segmentation_2021 folder
     :param percentage: float: how many in percentage yopu want to load
+    :param hot_encoding: if set to true target will be onehotencoded instead of containing numbers from 0-8
     :return: input and target
     """
 
