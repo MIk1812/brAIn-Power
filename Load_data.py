@@ -10,13 +10,19 @@ from torch.utils.data import DataLoader,Dataset
 
 
 # transforms an image from a random range to range 0-1
-def normalise(img):
+def feature_scaling(img):
     img = (img - np.min(img)) / (-np.min(img) + np.max(img))
     return img
 
+def color_correction(img):
+    img_new = np.zeros(img.shape)
+    img_new[0,:,:] = img[0,:,:]+ 0.485 / 0.229
+    img_new[1,:,:] = img[1,:,:] + 0.456 / 0.224
+    img_new[2,:,:] = img[2,:,:]+ 0.406 / 0.225
+    return img_new
 
 
-def load_data_2np(folder='car_segmentation_2021',hot_encoding=False,test_perc=0.01,valid_perc=0.1,train_perc=1.0):
+def load_data_2np(folder='car_segmentation_2021',hot_encoding=False,test_perc=0.01,valid_perc=0.1,train_perc=1.0,show=0):
     """
     :param folder: str: relative path to your car_segmentation_2021 folder
     :param percentage: float: how many in percentage yopu want to load
@@ -35,13 +41,12 @@ def load_data_2np(folder='car_segmentation_2021',hot_encoding=False,test_perc=0.
         for i in range(num_pict):
             img = np.load(datalst[i])
             imgx, imgy = img[0:3], img[-1]
-            X[i, :, :, :] = imgx[:, :, :]
+            X[i, :, :, :] = color_correction(imgx[:, :, :])
 
             if hot_encoding:
                 for j in range(9):
-                    imgy.astype('int64')
+                    imgy.astype('int8')
                     Y[i, j, :, :] = np.where(imgy == j, 1, 0)
-
             else:
                 Y[i, :, :, :] = imgy
         return X,Y
@@ -66,6 +71,7 @@ def load_data_2np(folder='car_segmentation_2021',hot_encoding=False,test_perc=0.
     #randomise the data list in order to have a varied validationlst
     random.seed(456)
     random.shuffle(datalst)
+    random.shuffle(actual_lst)
 
     # assign the pictures to the right arrays
     X_train,Y_train = assign_to_array(num_pict=num_train,datalst=datalst[0:num_train])
@@ -73,10 +79,17 @@ def load_data_2np(folder='car_segmentation_2021',hot_encoding=False,test_perc=0.
     X_test,Y_test = assign_to_array(num_pict=num_test,datalst=actual_lst)
 
     #normalise the vectors
-    mu1,mu2,mu3 = X_train[0].mean(),X_train[1].mean(),X_train[2].mean()
-    sigma1,sigma2,sigma3 = X_train[0].std(),X_train[1].std(),X_train[2].std()
+    # mu1,mu2,mu3 = X_train[0].mean(),X_train[1].mean(),X_train[2].mean()
+    # sigma1,sigma2,sigma3 = X_train[0].std(),X_train[1].std(),X_train[2].std()
+    #
+    # X_train[0],X_train[1],X_train[2] = (X_train[0]-mu1+0.5)/np.sqrt(sigma1),(X_train[1]-mu2+0.5)/np.sqrt(sigma2),(X_train[2]-mu3+0.5)/np.sqrt(sigma3)
+    for i in range(show):
+        img = X_train[i].transpose([2,1,0])
+        print(img[:,:,0].max(),img[:,:,0].min())
+        cv2.imshow('loading', img)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
 
-    X_train[0],X_train[1],X_train[2] = (X_train[0]-mu1+0.5)/np.sqrt(sigma1),(X_train[1]-mu2+0.5)/np.sqrt(sigma2),(X_train[2]-mu3+0.5)/np.sqrt(sigma3)
 
     return X_train,Y_train,X_valid,Y_valid ,X_test,Y_test
 
@@ -100,12 +113,12 @@ class CustomDataset(Dataset):
         img_arr = self.data
         self.data = np.zeros([self.data.shape[0],self.data.shape[2],self.data.shape[3]])
         for i in range(len(img_arr)):
-            img_arr[i] = normalise(img_arr[i])
+            img_arr[i] = feature_scaling(img_arr[i])
             img = 0.299*img_arr[i,0]+0.587*img_arr[i,1]+0.114*img_arr[i,2]
-            img = normalise(img)
+            img = feature_scaling(img)
             self.data[i]=img
 
-    def gray_gamma(self,gamma=1.2,show=False):
+    def gray_gamma(self,gamma=1.2,show=0):
         """
         this functions raises every individual pixel to a desired power. positive gammas enlarges contrast at brighter parts, lower gammas enlar contrast for the darker parts
         :param gamma: the exponent
@@ -117,17 +130,17 @@ class CustomDataset(Dataset):
         img_arr = self.data
         self.data = np.zeros([self.data.shape[0],self.data.shape[2],self.data.shape[3]])
         for i in range(len(img_arr)):
-            img_arr[i] = normalise(img_arr[i])
+            img_arr[i] = feature_scaling(img_arr[i])
             img = 0.299*img_arr[i,0]+0.587*img_arr[i,1]+0.114*img_arr[i,2]
-            img = normalise(img)
+            img = feature_scaling(img)
             img = img**(gamma)
             self.data[i]=img
-            if show:
+            if i<show:
                 cv2.imshow('', img)
                 cv2.waitKey(0)
                 cv2.destroyAllWindows()
 
-    def gray_gamma_enhanced(self, show=False, method='log',a=-1):
+    def gray_gamma_enhanced(self, show=0, method='log',a=-1):
         """
         this functions raises every individual pixel to a desired power. positive gammas enlarges contrast at brighter parts, lower gammas enlar contrast for the darker parts
         Difference with normal gamma is that this functions determines a gamma for every image based on their avarage pixel values
@@ -145,9 +158,9 @@ class CustomDataset(Dataset):
         img_arr = self.data
         self.data = np.zeros([self.data.shape[0], self.data.shape[2], self.data.shape[3]])
         for i in range(len(img_arr)):
-            img_arr[i] = normalise(img_arr[i])
+            img_arr[i] = feature_scaling(img_arr[i])
             img = 0.299 * img_arr[i, 0] + 0.587 * img_arr[i, 1] + 0.114 * img_arr[i, 2]
-            img = normalise(img)
+            img = feature_scaling(img)
             mu = img.mean()
             if method=='linear':
                 gamma = a*mu+b
@@ -157,12 +170,12 @@ class CustomDataset(Dataset):
                 raise Exception(f'method must be \'log\' or \'linear\' instead of{method}')
             img = img**(gamma)
             self.data[i] = img
-            if show:
+            if i<show:
                 cv2.imshow('', img)
                 cv2.waitKey(0)
                 cv2.destroyAllWindows()
 
-    def gray_log(self,show=False):
+    def gray_log(self,show=0):
         """
         This will increase contrast of the darker colors.
         :param show: default is false if true it will show every picture to evaluate it yourself, shut the program manually after seen the desired amount.
@@ -173,12 +186,12 @@ class CustomDataset(Dataset):
         img_arr = self.data
         self.data = np.zeros([self.data.shape[0], self.data.shape[2], self.data.shape[3]])
         for i in range(len(img_arr)):
-            img_arr[i] = normalise(img_arr[i])
+            img_arr[i] = feature_scaling(img_arr[i])
             img = 0.299 * img_arr[i, 0] + 0.587 * img_arr[i, 1] + 0.114 * img_arr[i, 2]
-            img = normalise(img)
+            img = feature_scaling(img)
             img = np.log(1+img)/(np.log(1+img.max()))
             self.data[i] = img
-            if show:
+            if i<show:
                 cv2.imshow('', img)
                 cv2.waitKey(0)
                 cv2.destroyAllWindows()
@@ -219,16 +232,16 @@ class CustomDataset(Dataset):
                 if merged:
                     img = img_arr[i]
                     img = apply_kernel(img, kernel)
-                    img = normalise(img)
+                    img = feature_scaling(img)
                     img_arr[i] = img
                 else:
                     img = img_arr[i]
                     img = apply_kernel(img,kernel)
-                    img = normalise(img)
+                    img = feature_scaling(img)
 
                     new_dat[i,idx+1] = img
 
-                if show:
+                if i<show:
                     cv2.imshow('', img)
                     cv2.waitKey(0)
                     cv2.destroyAllWindows()
@@ -237,24 +250,26 @@ class CustomDataset(Dataset):
 
         self.data = new_dat
 
-def load_data_2tensor(folder='car_segmentation_2021',hot_encoding=False,test_perc=0.01,valid_perc=0.1,batch_size=8,shuffle=False):
-    # X,target = load_data_2np(folder,percentage=percentage,hot_encoding=hot_encoding)
-    X_train,Y_train,X_valid,Y_valid,X_test,Y_test = load_data_2np(folder,hot_encoding,test_perc,valid_perc,train_perc=0.02)
-    DS_train = CustomDataset(X_train,Y_train)
-    DS_valid = CustomDataset(X_train, Y_train)
-    DS_test = CustomDataset(X_train, Y_train)
-    DL_train = DataLoader(DS_train, batch_size=batch_size ,shuffle=shuffle)
-    DS_valid = DataLoader(DS_valid)
-    DS_test = DataLoader(DS_test)
 
-    return DL_train,DS_valid,DS_test
+# Don't use!
+# def load_data_2tensor(folder='car_segmentation_2021',hot_encoding=False,test_perc=0.01,valid_perc=0.1,batch_size=8,shuffle=False):
+#     # X,target = load_data_2np(folder,percentage=percentage,hot_encoding=hot_encoding)
+#     X_train,Y_train,X_valid,Y_valid,X_test,Y_test = load_data_2np(folder,hot_encoding,test_perc,valid_perc,train_perc=0.02)
+#     DS_train = CustomDataset(X_train,Y_train)
+#     DS_valid = CustomDataset(X_train, Y_train)
+#     DS_test = CustomDataset(X_train, Y_train)
+#     DL_train = DataLoader(DS_train, batch_size=batch_size ,shuffle=shuffle)
+#     DS_valid = DataLoader(DS_valid)
+#     DS_test = DataLoader(DS_test)
+#
+#     return DL_train,DS_valid,DS_test
 
 
 def test_pics(example_feat):
 
     for i in range(8):
         img = example_feat[i].numpy().transpose([2, 1, 0])
-        imgC1, imgC2, imgC3 = normalise(img)[:, :, 0], normalise(img)[:, :, 1], normalise(img)[:, :, 2]
+        imgC1, imgC2, imgC3 = feature_scaling(img)[:, :, 0], feature_scaling(img)[:, :, 1], feature_scaling(img)[:, :, 2]
         img[:, :, 0], img[:, :, 1], img[:, :, 2] = imgC1, imgC2, imgC3
         cv2.imshow('', img)
         cv2.waitKey(0)
@@ -276,12 +291,11 @@ if __name__ == '__main__':
 
     #or do it yourself:
     #load in the data as np arrays (to just check it use a low train_perc to reduce runtime)
-    X_train,Y_train,X_valid,Y_valid,X_test,Y_test = load_data_2np(hot_encoding=True, test_perc=0.01, valid_perc=0.1, train_perc=0.05)
-
+    X_train,Y_train,X_valid,Y_valid,X_test,Y_test = load_data_2np(hot_encoding=True, test_perc=0.01, valid_perc=0.1, train_perc=0.05,show=5)
     #change the data into a dataset object in order to use DataLoader functionality
     DS_train = CustomDataset(X_train,Y_train)
     DS_train.gray_gamma_enhanced()
-    DS_train.get_edges(show=True,merged=False)
+    # DS_train.get_edges(show=True,merged=False)
     DL_train = DataLoader(DS_train,batch_size=8,shuffle=True)
 
 
