@@ -6,7 +6,7 @@ import cv2
 import time
 import random
 import torch
-from torch.utils.data import DataLoader,Dataset
+from torch.utils.data import DataLoader, Dataset
 
 
 # transforms an image from a random range to range 0-1
@@ -84,6 +84,7 @@ def load_data_2np(folder='car_segmentation_2021',hot_encoding=False,test_perc=0.
     #
     # X_train[0],X_train[1],X_train[2] = (X_train[0]-mu1+0.5)/np.sqrt(sigma1),(X_train[1]-mu2+0.5)/np.sqrt(sigma2),(X_train[2]-mu3+0.5)/np.sqrt(sigma3)
     for i in range(show):
+        print(X_train.shape)
         img = X_train[i].transpose([2,1,0])
         print(img[:,:,0].max(),img[:,:,0].min())
         cv2.imshow('loading', img)
