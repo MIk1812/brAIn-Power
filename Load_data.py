@@ -22,7 +22,7 @@ def color_correction(img):
     return img_new
 
 
-def load_data_2np(folder='car_segmentation_2021',hot_encoding=False,test_perc=0.01,valid_perc=0.1,train_perc=1.0,show=0):
+def load_data_2np(folder='clean_data',hot_encoding=False,test_perc=0.01,valid_perc=0.1,train_perc=1.0,show=0):
     """
     :param folder: str: relative path to your car_segmentation_2021 folder
     :param percentage: float: how many in percentage yopu want to load
@@ -51,7 +51,7 @@ def load_data_2np(folder='car_segmentation_2021',hot_encoding=False,test_perc=0.
                 Y[i, :, :, :] = imgy
         return X,Y
     #get list of all clean datafiles
-    datalst = glob.glob(f'{folder}\\clean_data\\clean_data\\*')
+    datalst = glob.glob(f'{folder}\\*')
     num_test = int(len(datalst) * test_perc)
     num_valid = int(len(datalst) * valid_perc)
     num_train = min(int(len(datalst)-num_test-num_valid),int(len(datalst)*train_perc))
@@ -292,7 +292,7 @@ if __name__ == '__main__':
 
     #or do it yourself:
     #load in the data as np arrays (to just check it use a low train_perc to reduce runtime)
-    X_train,Y_train,X_valid,Y_valid,X_test,Y_test = load_data_2np(hot_encoding=True, test_perc=0.01, valid_perc=0.1, train_perc=0.05,show=5)
+    X_train,Y_train,X_valid,Y_valid,X_test,Y_test = load_data_2np(hot_encoding=False, test_perc=0.01, valid_perc=0.1, train_perc=0.05,show=5)
     #change the data into a dataset object in order to use DataLoader functionality
     DS_train = CustomDataset(X_train,Y_train)
     DS_train.gray_gamma_enhanced()
