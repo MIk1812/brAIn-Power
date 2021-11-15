@@ -7,13 +7,14 @@ import time
 import random
 import torch
 from torch.utils.data import DataLoader,Dataset
-
+import os
 
 # transforms an image from a random range to range 0-1
 def feature_scaling(img):
     img = (img - np.min(img)) / (-np.min(img) + np.max(img))
     return img
 
+#correct the colors when loading in the data
 def color_correction(img):
     img_new = np.zeros(img.shape)
     img_new[0,:,:] = img[0,:,:]+ 0.485 / 0.229
@@ -21,8 +22,121 @@ def color_correction(img):
     img_new[2,:,:] = img[2,:,:]+ 0.406 / 0.225
     return img_new
 
+def one_hot2_2d(label):
+    for i in range(9):
+        label[i] = label[i]*i
 
-def load_data_2np(folder='clean_data',hot_encoding=False,test_perc=0.01,valid_perc=0.1,train_perc=1.0,show=0):
+    print(np.sum(label,axis=0).shape)
+
+    new_label = np.sum(label,axis=0)
+    new_label.astype(np.uint8)
+    return new_label
+
+#get all transformation functions
+#TODO implement the same transformation for all labels
+def scale(img,label):
+    if img.shape[0] == 3:
+        img = img.transpose([2, 1, 0])
+        rows, cols, _ = img.shape
+    else:
+        rows, cols = img.shape
+
+    if label.shape[0]==9:
+        label = one_hot2_2d(label)
+    label = label.reshape(256, 256)
+    scaling_factor = random.uniform(0.85,1.15)
+    res = cv2.resize(img, (int(scaling_factor * rows), int(scaling_factor * cols)), interpolation=cv2.INTER_LINEAR)
+    res_label = cv2.resize(label, (int(scaling_factor * rows), int(scaling_factor * cols)), interpolation=cv2.INTER_LINEAR)
+    newimg = np.zeros(img.shape)
+    newlabel = np.zeros(label.shape)
+
+
+    if res.shape[1]<newimg.shape[1]:
+        newimg[0:res.shape[0],0:res.shape[1]] = res
+        newlabel[0:res.shape[0],0:res.shape[1]] = res_label
+    else:
+        newimg = res[0:newimg.shape[0],0:newimg.shape[1]]
+        newlabel = res_label[0:newimg.shape[0],0:newimg.shape[1]]
+
+    newlabel = np.round(newlabel)
+    if newimg.shape[-1]==3:
+        return newimg.transpose([2, 1, 0]),newlabel
+
+    else:
+        return newimg,newlabel
+
+
+def translate(img,label):
+    if img.shape[0] == 3:
+        img = img.transpose([2, 1, 0])
+        rows, cols, _ = img.shape
+    else:
+        rows, cols = img.shape
+    if label.shape[0] == 9:
+        label = one_hot2_2d(label)
+    label = label.reshape(256, 256)
+    dx = random.uniform(1, 90)
+    dy = random.uniform(1, 90)
+
+    M = np.float32([[1, 0, dx], [0, 1, dy]])
+    dst = cv2.warpAffine(img, M, (cols, rows))
+    newlabel = cv2.warpAffine(label, M, (cols, rows))
+    if dst.shape[-1]==3:
+        return dst.transpose([2, 1, 0]),newlabel
+    else:
+        return dst,newlabel
+
+def rotate(img,label):
+    if img.shape[0] == 3:
+        img = img.transpose([2, 1, 0])
+        rows, cols, _ = img.shape
+    else:
+        rows, cols = img.shape
+
+    if label.shape[0] == 9:
+        label = one_hot2_2d(label)
+    label = label.reshape(256,256)
+    theta = random.uniform(0,360)
+
+    M = cv2.getRotationMatrix2D(((cols - 1) / 2.0, (rows - 1) / 2.0), theta, 1)
+    dst = cv2.warpAffine(img, M, (cols, rows))
+    newlabel = cv2.warpAffine(label, M, (cols, rows))
+
+    if dst.shape[-1] == 3:
+        return dst.transpose([2, 1, 0]),newlabel
+    else:
+        return dst,newlabel
+
+def shear(img,label):
+    if img.shape[0]==3:
+        img = img.transpose([2, 1, 0])
+        rows, cols, _ = img.shape
+    else:
+        rows, cols = img.shape
+    if label.shape[0] == 9:
+        label = one_hot2_2d(label)
+    label = label.reshape(256, 256)
+    pt11 = [int(rows/3),int(cols/2)]
+    center = [int(rows/2),int(cols/2)]
+    pt13 = [int(2*rows / 3), int(cols / 2)]
+    dx = random.uniform(-20,20)
+    dy = random.uniform(-20,20)
+
+    pt21 = [pt11[0]+dx,pt11[1]+dy]
+    pt23 = [pt13[0] - dx, pt13[1] - dy]
+
+    pts1 = np.float32([pt11, center, pt13])
+    pts2 = np.float32([pt21, center, pt23])
+    M = cv2.getAffineTransform(pts1, pts2)
+    dst = cv2.warpAffine(img, M, (cols, rows))
+    newlabel = cv2.warpAffine(label, M, (cols, rows))
+
+    if dst.shape[-1]==3:
+        return dst.transpose([2, 1, 0]),newlabel
+    else:
+        return dst,newlabel
+
+def load_data_2np(hot_encoding=False,test_perc=0.01,valid_perc=0.1,train_perc=1.0,show=0):
     """
     :param folder: str: relative path to your car_segmentation_2021 folder
     :param percentage: float: how many in percentage yopu want to load
@@ -51,22 +165,24 @@ def load_data_2np(folder='clean_data',hot_encoding=False,test_perc=0.01,valid_pe
                 Y[i, :, :, :] = imgy
         return X,Y
     #get list of all clean datafiles
+    folder = os.getenv('DEEP')
     datalst = glob.glob(f'{folder}\\*')
-    num_test = int(len(datalst) * test_perc)
+    num_test = 99
     num_valid = int(len(datalst) * valid_perc)
     num_train = min(int(len(datalst)-num_test-num_valid),int(len(datalst)*train_perc))
 
 
-    #get list of *_a.npy files
     actual_lst = []
-    for idx,name in enumerate(datalst):
+    temp_datalst = datalst.copy()
+    for idx,name in enumerate(temp_datalst):
         name = name.split('_')
         if name[-1]=="a.npy":
-            actual_lst.append(datalst[idx])
-            datalst.remove(datalst[idx])
-        if len(actual_lst) >= num_test:
-            assert 'maximum percentage is 1.89% for testdata'
-            break
+            actual_lst.append(temp_datalst[idx])
+            datalst.remove(temp_datalst[idx])
+
+        for jdx,j in enumerate(name):
+            if j[-3::]=='aug':
+                datalst.remove(temp_datalst[idx])
 
     #randomise the data list in order to have a varied validationlst
     random.seed(456)
@@ -84,11 +200,8 @@ def load_data_2np(folder='clean_data',hot_encoding=False,test_perc=0.01,valid_pe
     #
     # X_train[0],X_train[1],X_train[2] = (X_train[0]-mu1+0.5)/np.sqrt(sigma1),(X_train[1]-mu2+0.5)/np.sqrt(sigma2),(X_train[2]-mu3+0.5)/np.sqrt(sigma3)
     for i in range(show):
-        # img = X_train[i].transpose([2,1,0])
-        print(Y_train[i].max())
-        img = feature_scaling(Y_train[i].reshape((256,256)))
-        print(img.shape)
-        print(img[:,0].max(),img[:,0].min())
+        img = X_train[i].transpose([2,1,0])
+        img = feature_scaling(img)
         cv2.imshow('loading', img)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
@@ -253,6 +366,68 @@ class CustomDataset(Dataset):
 
         self.data = new_dat
 
+    def transforms(self,p_rot=0.1,p_trans=0.1,p_zoom=0.1,p_shear=0.1,show=2):
+        num_rot = int(p_rot * self.data.shape[0])
+        num_trans = int(p_trans * self.data.shape[0])
+        num_zoom = int(p_zoom * self.data.shape[0])
+        num_shear = int(p_shear * self.data.shape[0])
+
+        new_dat = np.zeros([self.data.shape[0]+num_rot+num_trans+num_zoom+num_shear]+list(self.data.shape[1::]))
+        new_lab = np.zeros([self.data.shape[0] + num_rot + num_trans + num_zoom + num_shear] + list(self.labels.shape[1::]))
+        # get a list of indexes for which we want a transformation this must be random.
+        idx_dat = list(range(self.data.shape[0]))
+        random.shuffle(idx_dat)
+        idxlst_rot = idx_dat[0:num_rot]
+        idxlst_trans = idx_dat[num_rot:num_rot+num_trans]
+        idxlst_zoom = idx_dat[num_rot+num_trans:num_rot+num_trans+num_zoom]
+        idxlst_shear = idx_dat[num_rot+num_trans+num_zoom:num_rot+num_trans+num_zoom+num_shear]
+
+        # helper function to show each transform
+        def local_show_func(i,show,img):
+            if i < show:
+                if len(img.shape) != 3:
+                    cv2.imshow('', img)
+                    cv2.waitKey(0)
+                    cv2.destroyAllWindows()
+                else:
+                    cv2.imshow('', img.transpose([2, 1, 0]))
+                    cv2.waitKey(0)
+                    cv2.destroyAllWindows()
+
+        # get the transformations of those pictures and append them in newdat
+        for i,idx in enumerate(idxlst_rot):
+            new_dat[i],new_lab[i] = rotate(self.data[idx],self.labels[idx])
+            local_show_func(i,show,new_dat[i])
+            local_show_func(i, show, new_lab[i])
+
+        for j,idx in enumerate(idxlst_trans):
+            new_dat[i+j+1],new_lab[i+j+1] = translate(self.data[idx],self.labels[idx])
+            local_show_func(j,show,new_dat[i+j])
+            local_show_func(i, show, new_lab[i+j])
+
+        for k,idx in enumerate(idxlst_zoom):
+            new_dat[i+j+k+2],new_lab[i+j+k+2] = scale(self.data[idx],self.labels[idx])
+            local_show_func(k, show, new_dat[i+j+k])
+            local_show_func(i, show, new_lab[i+j+k])
+
+        for l,idx in enumerate(idxlst_shear):
+            new_dat[i+j+k+l+3],new_lab[i+j+k+l+3] = shear(self.data[idx],self.labels[idx])
+            local_show_func(l, show, new_dat[i+j+k+l])
+            local_show_func(i, show, new_lab[i+j+k+l])
+
+        new_dat[i+j+k+l+4::] = self.data.copy()
+        self.data = new_dat.copy()
+
+        new_lab[i+j+k+l+4::] = self.labels.copy()
+        self.labels = new_lab.copy()
+
+
+        # shuffle all the newdat or not?
+
+
+
+
+
 
 # Don't use!
 # def load_data_2tensor(folder='car_segmentation_2021',hot_encoding=False,test_perc=0.01,valid_perc=0.1,batch_size=8,shuffle=False):
@@ -294,9 +469,15 @@ if __name__ == '__main__':
 
     #or do it yourself:
     #load in the data as np arrays (to just check it use a low train_perc to reduce runtime)
-    X_train,Y_train,X_valid,Y_valid,X_test,Y_test = load_data_2np(hot_encoding=False, test_perc=0.01, valid_perc=0.1, train_perc=0.05,show=5)
+    X_train,Y_train,X_valid,Y_valid,X_test,Y_test = load_data_2np(hot_encoding=False, test_perc=0.01, valid_perc=0.1, train_perc=0.05,show=0)
+
+
+
     #change the data into a dataset object in order to use DataLoader functionality
     DS_train = CustomDataset(X_train,Y_train)
+    print(len(DS_train))
+    DS_train.transforms()
+    print(len(DS_train))
     DS_train.gray_gamma_enhanced()
     # DS_train.get_edges(show=True,merged=False)
     DL_train = DataLoader(DS_train,batch_size=8,shuffle=True)
