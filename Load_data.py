@@ -166,7 +166,7 @@ def load_data_2np(hot_encoding=False,test_perc=0.01,valid_perc=0.1,train_perc=1.
         return X,Y
     #get list of all clean datafiles
     folder = os.getenv('DEEP')
-    datalst = glob.glob(f'{folder}\\*')
+    datalst = glob.glob(f'{folder}*')
     num_test = 99
     num_valid = int(len(datalst) * valid_perc)
     num_train = min(int(len(datalst)-num_test-num_valid),int(len(datalst)*train_perc))
@@ -403,17 +403,17 @@ class CustomDataset(Dataset):
         for j,idx in enumerate(idxlst_trans):
             new_dat[i+j+1],new_lab[i+j+1] = translate(self.data[idx],self.labels[idx])
             local_show_func(j,show,new_dat[i+j])
-            local_show_func(i, show, new_lab[i+j])
+            local_show_func(j, show, new_lab[i+j])
 
         for k,idx in enumerate(idxlst_zoom):
             new_dat[i+j+k+2],new_lab[i+j+k+2] = scale(self.data[idx],self.labels[idx])
             local_show_func(k, show, new_dat[i+j+k])
-            local_show_func(i, show, new_lab[i+j+k])
+            local_show_func(k, show, new_lab[i+j+k])
 
         for l,idx in enumerate(idxlst_shear):
             new_dat[i+j+k+l+3],new_lab[i+j+k+l+3] = shear(self.data[idx],self.labels[idx])
             local_show_func(l, show, new_dat[i+j+k+l])
-            local_show_func(i, show, new_lab[i+j+k+l])
+            local_show_func(l, show, new_lab[i+j+k+l])
 
         new_dat[i+j+k+l+4::] = self.data.copy()
         self.data = new_dat.copy()
