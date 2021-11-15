@@ -381,7 +381,7 @@ class CustomDataset(Dataset):
 
 
     def transforms(self,p_rot=0.1,p_trans=0.1,p_zoom=0.1,p_shear=0.1,show=0):
-        start_time_tr = time.time()
+
 
         num_rot = int(p_rot * self.data.shape[0])
         num_trans = int(p_trans * self.data.shape[0])
@@ -446,7 +446,7 @@ class CustomDataset(Dataset):
         self.labels = new_lab.copy()
         self.amount_transforms = i+j+k+l+4
 
-        print(f'transformations take {time.time()-start_time_tr} seconds')
+
 
     def remove_transforms(self):
         self.labels = self.labels[self.amount_transforms::]
