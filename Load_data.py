@@ -8,6 +8,8 @@ import random
 import torch
 from torch.utils.data import DataLoader,Dataset
 import os
+import platform
+
 
 # transforms an image from a random range to range 0-1
 def feature_scaling(img):
@@ -144,7 +146,7 @@ def shear(img,label):
     else:
         return dst,newlabel
 
-def load_data_2np(hot_encoding=False,test_perc=0.01,valid_perc=0.1,train_perc=1.0,show=0):
+def load_data_2np(hot_encoding=False,valid_perc=0.1,train_perc=1.0,CAD_perc=0.2,show=0,background=True):
     """
     :param folder: str: relative path to your car_segmentation_2021 folder
     :param percentage: float: how many in percentage yopu want to load
@@ -173,41 +175,49 @@ def load_data_2np(hot_encoding=False,test_perc=0.01,valid_perc=0.1,train_perc=1.
             else:
                 Y[i, :, :, :] = imgy
         return X,Y
-    #get list of all clean datafiles
+
+    # get OS
+    OS = platform.system().lower()
+    #get list of all clean datafiles\
     folder = os.getenv('DEEP')
-    datalst = glob.glob(f'{folder}*')
-    num_test = 99
+    if OS == 'windows':
+        if background:
+            train_folder_real = folder + '\\with_background\\train_real\\'
+            test_folder = folder + '\\with_background\\test\\'
+            train_folder_cad = folder + '\\with_background\\train_CAD\\'
+        else:
+            train_folder_real = folder + '\\without_background\\train_real\\'
+            test_folder = folder + '\\without_background\\test\\'
+            train_folder_cad = folder + '\\without_background\\train_CAD\\'
+    elif OS == 'darwin':
+        train_folder_real = folder + '/with_background/train_real/'
+        test_folder = folder + '/with_background/test/'
+        train_folder_cad = folder + '/with_background/train_CAD/'
+    else:
+        raise Exception("Your OS is not accepted.")
 
-    actual_lst = []
-    temp_datalst = datalst.copy()
-    for idx,name in enumerate(temp_datalst):
-        name = name.split('_')
-        if name[-1]=="a.npy":
-            actual_lst.append(temp_datalst[idx])
-            datalst.remove(temp_datalst[idx])
+    testlst = glob.glob(f'{test_folder}*')
+    trainlst_real = glob.glob(f'{train_folder_real}*')
+    trainlst_cad = glob.glob(f'{train_folder_cad}*')
 
-        for jdx,j in enumerate(name):
-            if j[-3::]=='aug':
-                datalst.remove(temp_datalst[idx])
+    # randomise the data list in order to have a varied validationlst
+    random.seed(456)
+    random.shuffle(testlst)
+    random.shuffle(trainlst_real)
+    random.shuffle(trainlst_cad)
+
+    datalst = trainlst_real+trainlst_cad[0::int(CAD_perc*len(trainlst_cad))]
+    datalst = datalst[0::int(train_perc*len(datalst))]
+
 
     num_valid = int(len(datalst) * valid_perc)
-    num_train = min(int(len(datalst) - num_test - num_valid), int(len(datalst) * train_perc))
-
-    #randomise the data list in order to have a varied validationlst
-    random.seed(456)
-    random.shuffle(datalst)
-    random.shuffle(actual_lst)
+    num_train = int(len(datalst) - num_valid)
 
     # assign the pictures to the right arrays
     X_train,Y_train = assign_to_array(num_pict=num_train,datalst=datalst[0:num_train])
     X_valid,Y_valid = assign_to_array(num_pict=num_valid,datalst=datalst[num_train::])
-    X_test,Y_test = assign_to_array(num_pict=num_test,datalst=actual_lst)
+    X_test,Y_test = assign_to_array(num_pict=len(testlst),datalst=testlst)
 
-    #normalise the vectors
-    # mu1,mu2,mu3 = X_train[0].mean(),X_train[1].mean(),X_train[2].mean()
-    # sigma1,sigma2,sigma3 = X_train[0].std(),X_train[1].std(),X_train[2].std()
-    #
-    # X_train[0],X_train[1],X_train[2] = (X_train[0]-mu1+0.5)/np.sqrt(sigma1),(X_train[1]-mu2+0.5)/np.sqrt(sigma2),(X_train[2]-mu3+0.5)/np.sqrt(sigma3)
     for i in range(show):
         img = X_train[i].transpose([2,1,0])
         img = feature_scaling(img)
@@ -379,7 +389,6 @@ class CustomDataset(Dataset):
 
         self.data = new_dat
 
-
     def transforms(self,p_rot=0.1,p_trans=0.1,p_zoom=0.1,p_shear=0.1,show=0):
 
 
@@ -446,8 +455,6 @@ class CustomDataset(Dataset):
         self.labels = new_lab.copy()
         self.amount_transforms = i+j+k+l+4
 
-
-
     def remove_transforms(self):
         self.labels = self.labels[self.amount_transforms::]
         self.data = self.data[self.amount_transforms::]
@@ -485,15 +492,6 @@ if __name__ == '__main__':
     # start a timer to see execution time
     start_time = time.time()
 
-    # This function loads in the data, makes batches and return it as a DataLoader objects used in the training loops
-    # DL_train,_,_ = load_data_2tensor(folder='car_segmentation_2021',hot_encoding=True,batch_size=8,shuffle=False)
-    # example_feat , example_labels  = next(iter(DL_train))
-    #
-    # print(f'feature batch shape: {example_feat.shape}')
-    # print(f'label batch shape: {example_labels.shape}')
-    #
-    # test_pics(example_feat)
-
 
     #or do it yourself:
     #load in the data as np arrays (to just check it use a low train_perc to reduce runtime)
@@ -512,8 +510,6 @@ if __name__ == '__main__':
     print(len(DS_train))
     # DS_train.get_edges(show=True,merged=False)
     DL_train = DataLoader(DS_train,batch_size=8,shuffle=True)
-
-
 
 
 
