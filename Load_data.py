@@ -166,6 +166,7 @@ def load_data_2np(hot_encoding=False,test_perc=0.01,valid_perc=0.1,train_perc=1.
         return X,Y
     #get list of all clean datafiles
     folder = os.getenv('DEEP')
+    print(folder)
     datalst = glob.glob(f'{folder}*')
     num_test = 99
     num_valid = int(len(datalst) * valid_perc)
