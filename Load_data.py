@@ -1,5 +1,7 @@
 import numpy as np
 import glob
+
+import numpy.random
 from matplotlib import pyplot as plt
 import matplotlib
 import cv2
@@ -185,30 +187,40 @@ def load_data_2np(hot_encoding=False,valid_perc=0.1,train_perc=1.0,CAD_perc=0.2,
             train_folder_real = folder + '\\with_background\\train_real\\'
             test_folder = folder + '\\with_background\\test\\'
             train_folder_cad = folder + '\\with_background\\train_CAD\\'
+            train_folder_trans = folder + '\\with_background\\train_transforms\\'
         else:
             train_folder_real = folder + '\\without_background\\train_real\\'
             test_folder = folder + '\\without_background\\test\\'
             train_folder_cad = folder + '\\without_background\\train_CAD\\'
+            train_folder_trans = folder + '\\without_background\\train_transforms\\'
     elif OS == 'darwin':
-        train_folder_real = folder + '/with_background/train_real/'
-        test_folder = folder + '/with_background/test/'
-        train_folder_cad = folder + '/with_background/train_CAD/'
+        if background:
+            train_folder_real = folder + '/with_background/train_real/'
+            test_folder = folder + '/with_background/test/'
+            train_folder_cad = folder + '/with_background/train_CAD/'
+            train_folder_trans = folder + '/with_background/train_transforms/'
+        else:
+            train_folder_real = folder + '/without_background/train_real/'
+            test_folder = folder + '/without_background/test/'
+            train_folder_cad = folder + '/without_background/train_CAD/'
+            train_folder_trans = folder + '/without_background/train_transforms/'
     else:
         raise Exception("Your OS is not accepted.")
 
     testlst = glob.glob(f'{test_folder}*')
     trainlst_real = glob.glob(f'{train_folder_real}*')
     trainlst_cad = glob.glob(f'{train_folder_cad}*')
+    trainlst_trans = glob.glob(f'{train_folder_trans}*')
 
     # randomise the data list in order to have a varied validationlst
     random.seed(456)
     random.shuffle(testlst)
     random.shuffle(trainlst_real)
     random.shuffle(trainlst_cad)
+    random.shuffle(trainlst_trans)
 
-    datalst = trainlst_real+trainlst_cad[0::int(CAD_perc*len(trainlst_cad))]
-    datalst = datalst[0::int(train_perc*len(datalst))]
-
+    datalst = trainlst_real+trainlst_cad[0:int(CAD_perc*len(trainlst_cad))]
+    datalst = datalst[0:int(train_perc*len(datalst))]
 
     num_valid = int(len(datalst) * valid_perc)
     num_train = int(len(datalst) - num_valid)
@@ -216,6 +228,7 @@ def load_data_2np(hot_encoding=False,valid_perc=0.1,train_perc=1.0,CAD_perc=0.2,
     # assign the pictures to the right arrays
     X_train,Y_train = assign_to_array(num_pict=num_train,datalst=datalst[0:num_train])
     X_valid,Y_valid = assign_to_array(num_pict=num_valid,datalst=datalst[num_train::])
+    X_trans,Y_trans = assign_to_array(num_pict=len(trainlst_trans),datalst=trainlst_trans)
     X_test,Y_test = assign_to_array(num_pict=len(testlst),datalst=testlst)
 
     for i in range(show):
@@ -226,11 +239,17 @@ def load_data_2np(hot_encoding=False,valid_perc=0.1,train_perc=1.0,CAD_perc=0.2,
         cv2.destroyAllWindows()
 
 
-    return X_train,Y_train,X_valid,Y_valid ,X_test,Y_test
+    return X_train,Y_train,X_valid,Y_valid, X_trans,Y_trans ,X_test,Y_test
 
 
 class CustomDataset(Dataset):
-    def __init__(self,data,labels):
+    def __init__(self,data,labels,transform_arr=None,transform_labels=None):
+        if transform_arr is None:
+            self.trans = False
+            self.trans_labels = False
+        else:
+            self.trans = transform_arr
+            self.trans_labels = transform_labels
         self.labels = labels
         self.data = data
         self.grayed=False
@@ -245,13 +264,19 @@ class CustomDataset(Dataset):
 
     def grayscale(self):
         self.grayed = True
-        img_arr = self.data
+        img_arr = np.zeros([self.data.shape[0]+self.trans.shape[0]]+list(self.data.shape[1::]))
+        img_arr[0:self.data.shape[0]] = self.data.copy()
+        img_arr[self.data.shape[0]::] = self.trans.copy()
         self.data = np.zeros([self.data.shape[0],self.data.shape[2],self.data.shape[3]])
+        self.trans = np.zeros([self.trans.shape[0],self.trans.shape[2],self.trans.shape[3]])
         for i in range(len(img_arr)):
             img_arr[i] = feature_scaling(img_arr[i])
             img = 0.299*img_arr[i,0]+0.587*img_arr[i,1]+0.114*img_arr[i,2]
             img = feature_scaling(img)
-            self.data[i]=img
+            if i<self.data.shape[0]:
+                self.data[i]=img
+            else:
+                self.trans[i-self.data.shape[0]] = img
 
     def gray_gamma(self,gamma=1.2,show=0):
         """
@@ -262,14 +287,21 @@ class CustomDataset(Dataset):
         """
         self.grayed = True
 
-        img_arr = self.data
-        self.data = np.zeros([self.data.shape[0],self.data.shape[2],self.data.shape[3]])
+        img_arr = np.zeros([self.data.shape[0] + self.trans.shape[0]] + list(self.data.shape[1::]))
+        img_arr[0:self.data.shape[0]] = self.data.copy()
+        img_arr[self.data.shape[0]::] = self.trans.copy()
+        self.data = np.zeros([self.data.shape[0], self.data.shape[2], self.data.shape[3]])
+        self.trans = np.zeros([self.trans.shape[0], self.trans.shape[2], self.trans.shape[3]])
         for i in range(len(img_arr)):
             img_arr[i] = feature_scaling(img_arr[i])
             img = 0.299*img_arr[i,0]+0.587*img_arr[i,1]+0.114*img_arr[i,2]
             img = feature_scaling(img)
             img = img**(gamma)
-            self.data[i]=img
+            if i<self.data.shape[0]:
+                self.data[i]=img
+            else:
+                self.trans[i-self.data.shape[0]] = img
+
             if i<show:
                 cv2.imshow('', img)
                 cv2.waitKey(0)
@@ -290,8 +322,12 @@ class CustomDataset(Dataset):
 
         method = method.lower()
         b = 1 - (0.5 * a)
-        img_arr = self.data
+
+        img_arr = np.zeros([self.data.shape[0] + self.trans.shape[0]] + list(self.data.shape[1::]))
+        img_arr[0:self.data.shape[0]] = self.data.copy()
+        img_arr[self.data.shape[0]::] = self.trans.copy()
         self.data = np.zeros([self.data.shape[0], self.data.shape[2], self.data.shape[3]])
+        self.trans = np.zeros([self.trans.shape[0], self.trans.shape[2], self.trans.shape[3]])
         for i in range(len(img_arr)):
             img_arr[i] = feature_scaling(img_arr[i])
             img = 0.299 * img_arr[i, 0] + 0.587 * img_arr[i, 1] + 0.114 * img_arr[i, 2]
@@ -304,7 +340,11 @@ class CustomDataset(Dataset):
             else:
                 raise Exception(f'method must be \'log\' or \'linear\' instead of{method}')
             img = img**(gamma)
-            self.data[i] = img
+
+            if i<self.data.shape[0]:
+                self.data[i]=img
+            else:
+                self.trans[i-self.data.shape[0]] = img
             if i<show:
                 cv2.imshow('', img)
                 cv2.waitKey(0)
@@ -313,7 +353,6 @@ class CustomDataset(Dataset):
                 cv2.imshow('', self.labels[i,0])
                 cv2.waitKey(0)
                 cv2.destroyAllWindows()
-
     def gray_log(self,show=0):
         """
         This will increase contrast of the darker colors.
@@ -322,20 +361,30 @@ class CustomDataset(Dataset):
         """
         self.grayed = True
 
-        img_arr = self.data
+        img_arr = np.zeros([self.data.shape[0] + self.trans.shape[0]] + list(self.data.shape[1::]))
+        img_arr[0:self.data.shape[0]] = self.data.copy()
+        img_arr[self.data.shape[0]::] = self.trans.copy()
         self.data = np.zeros([self.data.shape[0], self.data.shape[2], self.data.shape[3]])
+        self.trans = np.zeros([self.trans.shape[0], self.trans.shape[2], self.trans.shape[3]])
+
         for i in range(len(img_arr)):
             img_arr[i] = feature_scaling(img_arr[i])
             img = 0.299 * img_arr[i, 0] + 0.587 * img_arr[i, 1] + 0.114 * img_arr[i, 2]
             img = feature_scaling(img)
             img = np.log(1+img)/(np.log(1+img.max()))
-            self.data[i] = img
+            if i < self.data.shape[0]:
+                self.data[i] = img
+            else:
+                self.trans[i - self.data.shape[0]] = img
+
             if i<show:
                 cv2.imshow('', img)
                 cv2.waitKey(0)
                 cv2.destroyAllWindows()
 
+
     def get_edges(self,show=False,merged=False):
+
         # elementwise multiplication followed by summation
         def apply_kernel(img, kernel):
             img = cv2.filter2D(img,-1,kernel)
@@ -359,13 +408,19 @@ class CustomDataset(Dataset):
         kernel_b2t = np. array([[2,2,2],
                                 [0,0,0],
                                 [-2,-2,-2]])
+
         #define new data array to hold the grey image and the four edge detected images for decent use with dataloader
         if merged:
-            new_dat = np.zeros([self.data.shape[0], 2, self.data.shape[-2], self.data.shape[-1]])
+            new_dat = np.zeros([self.data.shape[0]+self.trans.shape[0], 2, self.data.shape[-2], self.data.shape[-1]])
         else:
-            new_dat = np.zeros([self.data.shape[0],5,self.data.shape[-2],self.data.shape[-1]])
+            new_dat = np.zeros([self.data.shape[0]+self.trans.shape[0],5,self.data.shape[-2],self.data.shape[-1]])
 
-        img_arr = self.data
+        img_arr = np.zeros(self.data.shape[0] + self.trans.shape[0] + list(self.data.shape[1::]))
+        img_arr[0:self.data.shape[0]] = self.data.copy()
+        img_arr[self.data.shape[0]::] = self.trans.copy()
+        self.data = np.zeros([self.data.shape[0], self.data.shape[2], self.data.shape[3]])
+        self.trans = np.zeros([self.trans.shape[0], self.trans.shape[2], self.trans.shape[3]])
+
         for i in range(len(img_arr)):
             for idx, kernel in enumerate([kernel_l2r, kernel_r2l, kernel_t2b, kernel_b2t]):
                 if merged:
@@ -387,10 +442,11 @@ class CustomDataset(Dataset):
             if merged:
                 new_dat[i,1] = img_arr[i]
 
-        self.data = new_dat
+
+        self.data = new_dat[0:self.data.shape[0]]
+        self.trans = new_dat[self.data.shape[0]::]
 
     def transforms(self,p_rot=0.1,p_trans=0.1,p_zoom=0.1,p_shear=0.1,show=0):
-
 
         num_rot = int(p_rot * self.data.shape[0])
         num_trans = int(p_trans * self.data.shape[0])
@@ -458,24 +514,40 @@ class CustomDataset(Dataset):
     def remove_transforms(self):
         self.labels = self.labels[self.amount_transforms::]
         self.data = self.data[self.amount_transforms::]
+        self.amount_transforms = 0
 
+    def add_transforms(self,p_trans=None,number_trans=None):
+        if self.trans is not False:
+            index_list = list(range(self.trans.shape[0]))
+            random.shuffle(index_list)
 
+            #get the desired amount of transformations
+            if p_trans is None and number_trans is None:
+                Exception('p_trans or number_trans should be set to a number')
+                amount = 0
+            elif p_trans is not None:
+                amount = int(p_trans * len(index_list))
+            else:
+                amount = number_trans
 
+            # check that amount is lower than the length of the list
+            amount = min(amount,len(index_list))
 
+            # get random transformed images and add them tyo the self.data variable
+            newdat = np.zeros([amount+self.data.shape[0]]+list(self.data.shape[1::]))
+            newlab = np.zeros([amount+self.labels.shape[0]]+list(self.labels.shape[1::]))
+            index_list = index_list[0:amount]
+            for iter,idx in enumerate(index_list):
+                newdat[iter] = self.trans[idx]
+                newlab[iter] = self.trans_labels[idx]
 
-
-# Don't use!
-# def load_data_2tensor(folder='car_segmentation_2021',hot_encoding=False,test_perc=0.01,valid_perc=0.1,batch_size=8,shuffle=False):
-#     # X,target = load_data_2np(folder,percentage=percentage,hot_encoding=hot_encoding)
-#     X_train,Y_train,X_valid,Y_valid,X_test,Y_test = load_data_2np(folder,hot_encoding,test_perc,valid_perc,train_perc=0.02)
-#     DS_train = CustomDataset(X_train,Y_train)
-#     DS_valid = CustomDataset(X_train, Y_train)
-#     DS_test = CustomDataset(X_train, Y_train)
-#     DL_train = DataLoader(DS_train, batch_size=batch_size ,shuffle=shuffle)
-#     DS_valid = DataLoader(DS_valid)
-#     DS_test = DataLoader(DS_test)
-#
-#     return DL_train,DS_valid,DS_test
+            newdat[amount::] = self.data.copy()
+            newlab[amount::] = self.labels.copy()
+            self.data = newdat.copy()
+            self.labels = newlab.copy()
+            self.amount_transforms = amount
+        else:
+            raise Exception('To use this function you need to give a transforms array as an input.')
 
 
 def test_pics(example_feat):
@@ -495,22 +567,25 @@ if __name__ == '__main__':
 
     #or do it yourself:
     #load in the data as np arrays (to just check it use a low train_perc to reduce runtime)
-    X_train,Y_train,X_valid,Y_valid,X_test,Y_test = load_data_2np(hot_encoding=False, valid_perc=0.1, train_perc=1,show=0)
+    X_train, Y_train, X_valid, Y_valid, X_trans, Y_trans, X_test, Y_test = load_data_2np(hot_encoding=False, valid_perc=0.1, train_perc=1,show=0,CAD_perc=1,background=True)
 
 
 
     #change the data into a dataset object in order to use DataLoader functionality
-    DS_train = CustomDataset(X_train,Y_train)
-    print(len(DS_train))
+    DS_train = CustomDataset(X_train,Y_train,X_trans,Y_trans)
 
     DS_train.gray_gamma_enhanced(show=0)
-    DS_train.transforms(show=0,p_rot=0.05,p_trans=0.05,p_zoom=0.05,p_shear=0.05)
-    print(len(DS_train))
+    DS_train.add_transforms(number_trans=100)
     DS_train.remove_transforms()
-    print(len(DS_train))
-    # DS_train.get_edges(show=True,merged=False)
+    DS_train.get_edges(show=True,merged=False)
     DL_train = DataLoader(DS_train,batch_size=8,shuffle=True)
-
-
+    # begin = time.perf_counter()
+    # for i in range(50):
+    #     # DS_train.transforms(p_trans=0.05,p_zoom=0.05,p_shear=0.05,p_rot=0.05)
+    #     DS_train.add_transforms()
+    #     DL_train = DataLoader(DS_train,batch_size=8,shuffle=True)
+    #     DS_train.remove_transforms()
+    # end = time.perf_counter()
+    # print(f'it took {end-begin} seconds to run') #98.27 seconds to run this with in loop transforms and 74 seconds to load in the transforms beforehand
 
     print("--- %s seconds ---" % (time.time() - start_time))
