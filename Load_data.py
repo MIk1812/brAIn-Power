@@ -13,6 +13,7 @@ import os
 import platform
 
 
+
 # transforms an image from a random range to range 0-1
 def feature_scaling(img):
     img = (img - np.min(img)) / (-np.min(img) + np.max(img))
@@ -30,11 +31,11 @@ def one_hot2_2d(label):
     for i in range(9):
         label[i] = label[i]*i
 
-    print(np.sum(label,axis=0).shape)
-
     new_label = np.sum(label,axis=0)
     new_label.astype(np.uint8)
-    return new_label
+    end_label = np.zeros((1,label.shape[-2],label.shape[-1]))
+    end_label[0] = new_label
+    return end_label
 
 #get all transformation functions
 
@@ -86,6 +87,7 @@ def translate(img,label):
     M = np.float32([[1, 0, dx], [0, 1, dy]])
     dst = cv2.warpAffine(img, M, (cols, rows))
     newlabel = cv2.warpAffine(label, M, (cols, rows))
+
     if dst.shape[-1]==3:
         return dst.transpose([2, 1, 0]),newlabel
     else:
@@ -148,6 +150,23 @@ def shear(img,label):
     else:
         return dst,newlabel
 
+def one_hot_encode(img=None,imgs=None):
+    if img is None:
+        num_pict = imgs.shape[0]
+        Y = np.zeros((num_pict,9, 256, 256))
+        imgs.astype('int8')
+        for i in range(num_pict):
+            for j in range(9):
+                Y[i, j, :, :] = np.where(imgs[i] == j, 1, 0)
+    elif imgs is None:
+        Y = np.zeros(( 1, 256, 256))
+        for j in range(9):
+            img.astype('int8')
+            Y[0, j, :, :] = np.where(img == j, 1, 0)
+    else:
+        raise Exception('only one of the two may be given')
+
+    return Y
 def load_data_2np(hot_encoding=False,valid_perc=0.1,train_perc=1.0,CAD_perc=0.2,show=0,background=True):
     """
     :param folder: str: relative path to your car_segmentation_2021 folder
@@ -243,7 +262,7 @@ def load_data_2np(hot_encoding=False,valid_perc=0.1,train_perc=1.0,CAD_perc=0.2,
 
 
 class CustomDataset(Dataset):
-    def __init__(self,data,labels,transform_arr=None,transform_labels=None):
+    def __init__(self,data,labels,transform_arr=None,transform_labels=None,one_hot=False):
         if transform_arr is None:
             self.trans = False
             self.trans_labels = False
@@ -253,6 +272,7 @@ class CustomDataset(Dataset):
         self.labels = labels
         self.data = data
         self.grayed=False
+        self.one_hot = one_hot
 
     def __len__(self):
         return len(self.labels)
@@ -415,11 +435,12 @@ class CustomDataset(Dataset):
         else:
             new_dat = np.zeros([self.data.shape[0]+self.trans.shape[0],5,self.data.shape[-2],self.data.shape[-1]])
 
-        img_arr = np.zeros(self.data.shape[0] + self.trans.shape[0] + list(self.data.shape[1::]))
+
+        img_arr = np.zeros([self.data.shape[0] + self.trans.shape[0]] + list(self.data.shape[1::]))
         img_arr[0:self.data.shape[0]] = self.data.copy()
         img_arr[self.data.shape[0]::] = self.trans.copy()
-        self.data = np.zeros([self.data.shape[0], self.data.shape[2], self.data.shape[3]])
-        self.trans = np.zeros([self.trans.shape[0], self.trans.shape[2], self.trans.shape[3]])
+        self.data = np.zeros([self.data.shape[0], self.data.shape[1], self.data.shape[2]])
+        self.trans = np.zeros([self.trans.shape[0], self.trans.shape[1], self.trans.shape[2]])
 
         for i in range(len(img_arr)):
             for idx, kernel in enumerate([kernel_l2r, kernel_r2l, kernel_t2b, kernel_b2t]):
@@ -454,7 +475,12 @@ class CustomDataset(Dataset):
         num_shear = int(p_shear * self.data.shape[0])
 
         new_dat = np.zeros([self.data.shape[0]+num_rot+num_trans+num_zoom+num_shear]+list(self.data.shape[1::]))
-        new_lab = np.zeros([self.data.shape[0] + num_rot + num_trans + num_zoom + num_shear] + list(self.labels.shape[1::]))
+        new_lab = np.zeros([self.data.shape[0] + num_rot + num_trans + num_zoom + num_shear] + [1]+list(self.labels.shape[-2::]))
+
+        if self.one_hot:
+            new_lab2 = np.zeros(
+                [self.data.shape[0] + num_rot + num_trans + num_zoom + num_shear]  + list(self.labels.shape[1::]))
+
         # get a list of indexes for which we want a transformation this must be random.
         idx_dat = list(range(self.data.shape[0]))
         random.shuffle(idx_dat)
@@ -506,9 +532,13 @@ class CustomDataset(Dataset):
 
         new_dat[i+j+k+l+4::] = self.data.copy()
         self.data = new_dat.copy()
-
-        new_lab[i+j+k+l+4::] = self.labels.copy()
-        self.labels = new_lab.copy()
+        if self.one_hot:
+            new_lab2[::i+j+k+l+4] = one_hot_encode(imgs=new_lab[::i+j+k+l+4])
+            new_lab2[i+j+k+l+4::] = self.labels.copy()
+            self.labels = new_lab2.copy()
+        else:
+            new_lab[i+j+k+l+4::] = self.labels.copy()
+            self.labels = new_lab.copy()
         self.amount_transforms = i+j+k+l+4
 
     def remove_transforms(self):
@@ -567,14 +597,15 @@ if __name__ == '__main__':
 
     #or do it yourself:
     #load in the data as np arrays (to just check it use a low train_perc to reduce runtime)
-    X_train, Y_train, X_valid, Y_valid, X_trans, Y_trans, X_test, Y_test = load_data_2np(hot_encoding=False, valid_perc=0.1, train_perc=1,show=0,CAD_perc=1,background=True)
+    X_train, Y_train, X_valid, Y_valid, X_trans, Y_trans, X_test, Y_test = load_data_2np(hot_encoding=True, valid_perc=0.1, train_perc=0.1,show=0,CAD_perc=0,background=True)
 
-
+    print(X_train.shape,Y_train.shape)
 
     #change the data into a dataset object in order to use DataLoader functionality
-    DS_train = CustomDataset(X_train,Y_train,X_trans,Y_trans)
+    DS_train = CustomDataset(X_train,Y_train,X_trans,Y_trans,one_hot=True)
 
     DS_train.gray_gamma_enhanced(show=0)
+    # DS_train.transforms()
     DS_train.add_transforms(number_trans=100)
     DS_train.remove_transforms()
     DS_train.get_edges(show=True,merged=False)
