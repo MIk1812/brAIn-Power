@@ -60,11 +60,11 @@ class UNet50(nn.Module):
         del pre_pools
         return x
 
-
-model = UNet50(n_classes=9) # .cuda()
-inp = torch.rand((2, 3, 512, 512)) # .cuda()
-out = model(inp)
-print("finished...")
+if __name__ == '__main__':
+    model = UNet50(n_classes=9) # .cuda()
+    inp = torch.rand((2, 3, 512, 512)) # .cuda()
+    out = model(inp)
+    print("finished...")
 
 
 
