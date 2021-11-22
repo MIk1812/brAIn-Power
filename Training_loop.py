@@ -34,8 +34,8 @@ optimizer = torch.optim.SGD(net.parameters(),lr=1e-3)
 
 #define hyper parameters
 net.train()
-NUM_EPOCHS = 5
-check_at = 1
+NUM_EPOCHS = 6
+check_at = 5
 
 #define list to stor intermediat results
 valid_iter = []
