@@ -35,6 +35,8 @@ class UNet50(nn.Module):
 
         self.out = nn.Conv2d(64, n_classes, kernel_size=1, stride=1)
 
+        self.softmax = nn.Softmax2d()
+
     def forward(self, x):
         pre_pools = dict()
         pre_pools[f"layer_0"] = x
@@ -54,6 +56,7 @@ class UNet50(nn.Module):
             x = block(x, pre_pools[key])
 
         x = self.out(x)
+        x = self.softmax(x)
         del pre_pools
         return x
 
@@ -61,7 +64,6 @@ class UNet50(nn.Module):
 model = UNet50(n_classes=9) # .cuda()
 inp = torch.rand((2, 3, 512, 512)) # .cuda()
 out = model(inp)
-print(out)
 print("finished...")
 
 
