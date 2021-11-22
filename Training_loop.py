@@ -12,12 +12,12 @@ DS_valid = CustomDataset(X_train, Y_train,one_hot=True)
 DS_test = CustomDataset(X_test,Y_test,one_hot=True)
 
 #perform preprocessing:
-# DS_train.gray_gamma()
-# DS_valid.gray_gamma()
-# DS_test.gray_gamma()
+DS_train.gray_gamma_enhanced()
+DS_valid.gray_gamma_enhanced()
+DS_test.gray_gamma_enhanced()
 
 #load in model
-net = UN50.UNet50(n_classes=9)
+net = UN50.UNet50(n_classes=9,rgb=False)
 net.double()
 
 #creat lossfunction and optimizer

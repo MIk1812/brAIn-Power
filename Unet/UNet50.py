@@ -10,12 +10,13 @@ from Unet.Bridge import Bridge
 class UNet50(nn.Module):
     DEPTH = 6
 
-    def __init__(self, n_classes):
+    def __init__(self, n_classes,rgb=True):
         super().__init__()
+        self.rgb = rgb
         resnet = torchvision.models.resnet.resnet50(pretrained=True)
         blocks_up = []
         blocks_down = []
-
+        self.conv0 = torch.nn.Conv2d(1,3,1,1)
         self.input_block = nn.Sequential(*list(resnet.children()))[:3]
         self.input_pool = list(resnet.children())[3]
         for bottleneck in list(resnet.children()):
@@ -38,6 +39,8 @@ class UNet50(nn.Module):
         self.softmax = nn.Softmax2d()
 
     def forward(self, x):
+        if not self.rgb:
+            x = self.conv0(x)
         pre_pools = dict()
         pre_pools[f"layer_0"] = x
         x = self.input_block(x)
