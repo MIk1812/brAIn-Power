@@ -29,13 +29,13 @@ net = UN50.UNet50(n_classes=9,rgb=False)
 net.double()
 
 #creat lossfunction and optimizer
-criterion = torch.nn.CrossEntropyLoss()
+criterion = UN50.DiceLoss()
 optimizer = torch.optim.SGD(net.parameters(),lr=1e-3)
 
 #define hyper parameters
 net.train()
-NUM_EPOCHS = 6
-check_at = 5
+NUM_EPOCHS = 2
+check_at = 2
 
 #define list to stor intermediat results
 valid_iter = []
@@ -57,7 +57,9 @@ for epoch in range(NUM_EPOCHS):
         #train the network
         optimizer.zero_grad()
         output = net(input)
+        print('befor')
         loss = criterion(output,target)
+        print('check loss: ',loss)
         loss.backward()
         optimizer.step()
 
