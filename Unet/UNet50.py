@@ -5,7 +5,7 @@ import torch.nn as nn
 import torchvision
 from Unet.UpBlock import UpBlock
 from Unet.Bridge import Bridge
-
+import torch.nn.functional as F
 
 class UNet50(nn.Module):
     DEPTH = 6
@@ -62,6 +62,50 @@ class UNet50(nn.Module):
         x = self.softmax(x)
         del pre_pools
         return x
+
+
+class DiceLoss(nn.Module):
+    def __init__(self, weight=None, size_average=True):
+        super(DiceLoss, self).__init__()
+
+    def forward(self, inputs, targets, smooth=1):
+        # comment out if your model contains a sigmoid or equivalent activation layer
+        inputs = torch.sigmoid(inputs)
+
+        # flatten label and prediction tensors
+        inputs = inputs.view(-1)
+        targets = targets.view(-1)
+
+        intersection = (inputs * targets).sum()
+        dice = (2. * intersection + smooth) / (inputs.sum() + targets.sum() + smooth)
+
+        return 1 - dice
+
+
+ALPHA = 0.5  # < 0.5 penalises FP more, > 0.5 penalises FN more
+CE_RATIO = 0.5  # weighted contribution of modified CE loss compared to Dice loss
+
+
+class ComboLoss(nn.Module):
+    def __init__(self, weight=None, size_average=True):
+        super(ComboLoss, self).__init__()
+
+    def forward(self, inputs, targets, smooth=1, ALPHA=ALPHA, CE_RATIO=CE_RATIO, eps=1e-9):
+        # flatten label and prediction tensors
+        inputs = inputs.view(-1)
+        targets = targets.view(-1)
+
+        # True Positives, False Positives & False Negatives
+        intersection = (inputs * targets).sum()
+        dice = (2. * intersection + smooth) / (inputs.sum() + targets.sum() + smooth)
+
+        inputs = torch.clamp(inputs, eps, 1.0 - eps)
+        out = - (ALPHA * ((targets * torch.log(inputs)) + ((1 - ALPHA) * (1.0 - targets) * torch.log(1.0 - inputs))))
+        weighted_ce = out.mean(-1)
+        combo = (CE_RATIO * weighted_ce) - ((1 - CE_RATIO) * dice)
+
+        return combo
+
 
 if __name__ == '__main__':
     model = UNet50(n_classes=9) # .cuda()
